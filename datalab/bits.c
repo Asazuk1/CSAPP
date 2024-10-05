@@ -143,7 +143,7 @@ NOTES:
  *   Rating: 1
  */
 int bitXor(int x, int y) {
-  return 2;
+  return ~(~(x & ~y) & ~(~x & y));
 }
 /* 
  * tmin - return minimum two's complement integer 
@@ -152,9 +152,7 @@ int bitXor(int x, int y) {
  *   Rating: 1
  */
 int tmin(void) {
-
-  return 2;
-
+  return 1 << 31;
 }
 //2
 /*
@@ -165,7 +163,11 @@ int tmin(void) {
  *   Rating: 1
  */
 int isTmax(int x) {
-  return 2;
+  // Tmax + 1 = Tmin
+  // Tmax ^ Tmin == 0xFFFFFFFF
+  // Tmax ^ ~Tmin == 0x00000000
+  // if x == -1, !(x ^ ~(x + 1)) will output 1, should exclude this case
+  return !(x ^ ~(x + 1)) & !!(x + 1);
 }
 /* 
  * allOddBits - return 1 if all odd-numbered bits in word set to 1
@@ -176,7 +178,9 @@ int isTmax(int x) {
  *   Rating: 2
  */
 int allOddBits(int x) {
-  return 2;
+  // x == y, equivalent to !(x ^ y)
+  int compare_num = 0xAAAAAAAA;
+  return !((x & compare_num) ^ compare_num);
 }
 /* 
  * negate - return -x 

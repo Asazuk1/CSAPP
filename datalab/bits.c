@@ -166,7 +166,8 @@ int isTmax(int x) {
   // Tmax + 1 = Tmin
   // Tmax ^ Tmin == 0xFFFFFFFF
   // Tmax ^ ~Tmin == 0x00000000
-  // if x == -1, !(x ^ ~(x + 1)) will output 1, should exclude this case
+  // if x == -1, !(x ^ ~(x + 1)) will output 1, should exclude this case, this
+  // reminds you that when thinking about a number, you should also think about its complement
   return !(x ^ ~(x + 1)) & !!(x + 1);
 }
 /* 
@@ -179,8 +180,9 @@ int isTmax(int x) {
  */
 int allOddBits(int x) {
   // x == y, equivalent to !(x ^ y)
-  int compare_num = 0xAAAAAAAA;
-  return !((x & compare_num) ^ compare_num);
+  int mask = (0xAA << 8) | 0xAA;  // 构造16位掩码 0xAAAA
+  mask = (mask << 16) | mask;     // 构造32位掩码 0xAAAAAAAA, 只要int mask = 0xAAAAAAAA即可, 但dlc不允许
+  return !((x & mask) ^ mask);
 }
 /* 
  * negate - return -x 
@@ -190,7 +192,7 @@ int allOddBits(int x) {
  *   Rating: 2
  */
 int negate(int x) {
-  return 2;
+  return ~x + 1;
 }
 //3
 /* 
@@ -203,7 +205,11 @@ int negate(int x) {
  *   Rating: 3
  */
 int isAsciiDigit(int x) {
-  return 2;
+  // x >= y: x - y >= 0, !(x + (~y + 1))
+  // 0x30 <= x <= 0x39
+  int lowerBound = x + (~0x30 + 1);
+  int upperBound = 0x39 + (~x + 1);
+  return !(lowerBound >> 31) & !(upperBound >> 31);
 }
 /* 
  * conditional - same as x ? y : z 
@@ -213,7 +219,9 @@ int isAsciiDigit(int x) {
  *   Rating: 3
  */
 int conditional(int x, int y, int z) {
-  return 2;
+  x = !!x;     // turn x into a bool value
+  x = ~x + 1;  // acquire x_bool's complement
+  return (x & y) | (~x & z);  // final return
 }
 /* 
  * isLessOrEqual - if x <= y  then return 1, else return 0 

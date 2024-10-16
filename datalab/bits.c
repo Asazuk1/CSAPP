@@ -231,7 +231,8 @@ int conditional(int x, int y, int z) {
  *   Rating: 3
  */
 int isLessOrEqual(int x, int y) {
-  return 2;
+  // y - x >= 0, one problem is should I consider overflow?
+  return !((y + (~x + 1)) >> 31);
 }
 //4
 /* 
@@ -243,7 +244,11 @@ int isLessOrEqual(int x, int y) {
  *   Rating: 4 
  */
 int logicalNeg(int x) {
-  return 2;
+  // note: Sign extension:
+  // fill the missing bits according to the sign bit
+  // e.g. 111.....001 >> 31, will acquire 111....1111(all 1)
+  // so (x | (~x + 1)) >> 31 will return -1 or 0, and returns 0 only when x == 0
+  return ((x | (~x + 1)) >> 31) + 1;
 }
 /* howManyBits - return the minimum number of bits required to represent x in
  *             two's complement
@@ -255,10 +260,35 @@ int logicalNeg(int x) {
  *            howManyBits(0x80000000) = 32
  *  Legal ops: ! ~ & ^ | + << >>
  *  Max ops: 90
- *  Rating: 4
+ *  Rating:4
  */
 int howManyBits(int x) {
-  return 0;
+  int sign, b16, b8, b4, b2, b1, b0;
+
+  // Step 1: If x is negative, flip all bits (because we are working with two's complement)
+  sign = x >> 31;  
+  x = x ^ sign;
+
+  // Step 2: Binary search to find the position of the highest bit set to 1
+  b16 = !!(x >> 16) << 4;
+  x = x >> b16;
+
+  b8 = !!(x >> 8) << 3;  
+  x = x >> b8;
+
+  b4 = !!(x >> 4) << 2;  
+  x = x >> b4;      
+
+  b2 = !!(x >> 2) << 1;   
+  x = x >> b2;  
+
+  b1 = !!(x >> 1);
+  x = x >> b1;  
+
+  b0 = x;
+
+  // Step 3: Sum all the shifts and add 1 for the sign bit
+  return b16 + b8 + b4 + b2 + b1 + b0 + 1;
 }
 //float
 /* 
@@ -273,7 +303,33 @@ int howManyBits(int x) {
  *   Rating: 4
  */
 unsigned floatScale2(unsigned uf) {
-  return 2;
+  unsigned sign = uf & 0x80000000;  // 提取符号位 (第31位)
+  unsigned exp = (uf >> 23) & 0xFF; // 提取指数位 (第30到23位)
+  unsigned frac = uf & 0x7FFFFF;    // 提取尾数位 (第22到0位)
+
+  // 情况 1：如果指数位全为1，表示 NaN 或无穷大，直接返回 uf
+  if (exp == 0xFF) {
+      return uf;
+  }
+
+  // 情况 2：如果指数位为0，表示非规格化数
+  if (exp == 0) {
+      // 左移尾数来乘以2
+      frac <<= 1;
+      // 将符号位和尾数组合返回（指数部分仍为0）
+      return sign | frac;
+  }
+
+  // 情况 3：规格化数，指数加1
+  exp += 1;
+
+  // 如果指数溢出变为255（0xFF），则返回无穷大
+  if (exp == 0xFF) {
+      return sign | 0x7F800000; // 返回符号位和无穷大表示（尾数为0）
+  }
+
+  // 正常情况：返回符号位、更新后的指数和原始尾数
+  return sign | (exp << 23) | frac;
 }
 /* 
  * floatFloat2Int - Return bit-level equivalent of expression (int) f
@@ -288,7 +344,49 @@ unsigned floatScale2(unsigned uf) {
  *   Rating: 4
  */
 int floatFloat2Int(unsigned uf) {
-  return 2;
+  unsigned sign = uf >> 31;           // 符号位（第31位）
+  unsigned exp = (uf >> 23) & 0xFF;   // 指数位（第30到23位）
+  unsigned frac = uf & 0x7FFFFF;      // 尾数位（第22到0位）
+  int E;
+
+  // 情况 1：如果指数全为1 (255)，说明是 NaN 或无穷大，返回 0x80000000
+  if (exp == 0xFF) {
+      return 0x80000000;
+  }
+
+  // 情况 2：如果指数为0，或者指数小于127，表示值不足1，返回0
+  // E = exp - 127，指数小于127时表示数值小于1
+  if (exp < 127) {
+      return 0;
+  }
+
+  // 情况 3：计算实际的指数值 E（规格化数）
+  E = exp - 127;
+
+  // 将尾数加上隐含的1，表示为 1.xxxxxx 的形式
+  frac = frac | 0x800000;  // 添加隐含位
+
+  // 情况 4：根据 E 的值来计算尾数的移位（将浮点数转换为整数）
+  if (E > 23) {
+      // 如果 E > 23，将尾数左移 (E - 23) 位来得到整数
+      frac = frac << (E - 23);
+  } else {
+      // 如果 E <= 23，将尾数右移 (23 - E) 位
+      frac = frac >> (23 - E);
+  }
+
+  // 情况 5：处理符号位，如果符号位是 1，说明是负数，需要取反
+  if (sign) {
+      frac = -frac;
+  }
+
+  // 情况 6：处理溢出情况
+  // 如果 frac 超过了 32 位有符号整数的范围，返回 0x80000000
+  if (E >= 31) {
+    return 0x80000000;
+  }
+
+  return frac;
 }
 /* 
  * floatPower2 - Return bit-level equivalent of the expression 2.0^x
@@ -304,5 +402,23 @@ int floatFloat2Int(unsigned uf) {
  *   Rating: 4
  */
 unsigned floatPower2(int x) {
-    return 2;
+    unsigned exp = x + 127;
+
+    // 情况 1：x 太小，无法表示为非规格化数或规格化数
+    if (x < -149) {
+        return 0;
+    }
+    
+    // 情况 2：x 太大，返回正无穷
+    if (x > 127) {
+        return 0x7F800000;  // 正无穷的 IEEE 754 表示
+    }
+    
+    // 情况 3：非规格化数的处理，-149 <= x <= -127
+    if (-149 <= x && x <= -127) {
+        return 1 << (x + 149);
+    }
+    
+    // 情况 4：规格化数，计算指数部分
+    return exp << 23;  // 尾数部分为 0，直接移位构造浮点数
 }
